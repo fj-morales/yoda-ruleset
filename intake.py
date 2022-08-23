@@ -397,9 +397,12 @@ def api_intake_scan_for_datasets(ctx, coll):
     """
 
     if _intake_check_authorized_to_scan(ctx, coll):
-        _intake_scan_for_datasets(ctx, coll)
+        try:
+            _intake_scan_for_datasets(ctx, coll)
+        except Exception:
+            return {"proc_status": "NOK", "error_msg": "Error during scanning process"}
     else:
-        return {}
+        return {"proc_status": "NOK", "error_msg": "No permissions to scan collection"}
 
     return {"proc_status": "OK"}
 
@@ -412,12 +415,17 @@ def rule_intake_scan_for_datasets(ctx, coll):
     :param ctx:  Combined type of a callback and rei struct
     :param coll: Collection to scan for datasets
 
-    :returns: indication correct
+    :returns: 0=correct, 1=insufficient rights, 2=error during scanning process
     """
+    if not collection.exists(ctx, coll):
+        return "Non existing collection: " + coll
     if _intake_check_authorized_to_scan(ctx, coll):
-        _intake_scan_for_datasets(ctx, coll, tl_datasets_log_target='stdout')
+        try:
+            _intake_scan_for_datasets(ctx, coll, tl_datasets_log_target='stdout')
+        except Exception:
+            return "Error scanning for datasets for collection: " + coll
     else:
-        return 1
+        return "Insufficient permissions for collection: " + coll
 
     return 0
 
@@ -492,10 +500,22 @@ def api_intake_lock_dataset(ctx, path, dataset_ids):
 
     if not user.is_member_of(ctx, datamanager_group):
         log.write(ctx, "No permissions to lock dataset")
-        return {"proc_status": "NOK"}
+        return {"proc_status": "NOK",
+                "error_msg": "No permissions to lock dataset(s)",
+                "error_dataset_ids": []}
 
+    error_dataset_ids = []
     for dataset_id in dataset_ids.split(','):
-        intake_lock.intake_dataset_lock(ctx, path, dataset_id)
+        # error_dataset_ids.append(dataset_id)
+        try:
+            intake_lock.intake_dataset_lock(ctx, path, dataset_id)
+        except Exception:
+            error_dataset_ids.append(dataset_id)
+
+    if error_dataset_ids:
+        return {"proc_status": "NOK",
+                "error_msg": "Something went wrong locking datasets",
+                "error_dataset_ids": error_dataset_ids}
 
     return {"proc_status": "OK"}
 
@@ -518,11 +538,23 @@ def api_intake_unlock_dataset(ctx, path, dataset_ids):
     datamanager_group = group.replace("-intake-", "-datamanager-", 1)
 
     if not user.is_member_of(ctx, datamanager_group):
-        log.write(ctx, "No permissions to unlock dataset")
-        return {"proc_status": "NOK"}
+        log.write(ctx, "No permissions to unlock dataset(s)")
+        return {"proc_status": "NOK",
+                "error_msg": "No permissions to unlock dataset",
+                "error_dataset_ids": []}
 
+    error_dataset_ids = []
     for dataset_id in dataset_ids.split(','):
-        intake_lock.intake_dataset_unlock(ctx, path, dataset_id)
+        # error_dataset_ids.append(dataset_id)
+        try:
+            intake_lock.intake_dataset_unlock(ctx, path, dataset_id)
+        except Exception:
+            error_dataset_ids.append(dataset_id)
+
+    if error_dataset_ids:
+        return {"proc_status": "NOK",
+                "error_msg": "Something went wrong unlocking datasets",
+                "error_dataset_ids": error_dataset_ids}
 
     return {"proc_status": "OK"}
 
